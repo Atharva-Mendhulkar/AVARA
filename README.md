@@ -356,7 +356,7 @@ AVARA is a **sidecar / gateway**, not a rewrite.
 
 ### **7.1 Secure Agent Execution**
 
-```
+```mermaid
 usecaseDiagram
 actor User
 actor Agent
@@ -375,7 +375,7 @@ Tool --> Agent : Result
 
 ### **7.2 Destructive Action Protection**
 
-```
+```mermaid
 usecaseDiagram
 actor Agent
 actor AVARA
@@ -395,7 +395,7 @@ AVARA --> Agent : Continue / Halt
 
 ### **8.1 RAG Retrieval Workflow**
 
-```
+```mermaid
 flowchart TD
 Q[User Query] --> R[Retrieve Docs]
 R --> P[Provenance Check]
@@ -408,7 +408,7 @@ I -->|Unsafe| QZ[Quarantine]
 
 ### **8.2 Tool Invocation Workflow**
 
-```
+```mermaid
 flowchart TD
 A[Agent Tool Call] --> V[Validate Tool]
 V --> P[Policy Check]
