@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  avara-api:
+    build: .
+    container_name: avara_authority
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist SQLite database and logs outside the container
+      - ./avara_state.db:/app/avara_state.db
+      - ./logs:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped

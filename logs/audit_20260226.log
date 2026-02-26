@@ -4,3 +4,6 @@
 2026-02-26 13:48:13,688 - {"timestamp": "2026-02-26T13:48:13.688568", "event_type": "APPROVAL_REQUEST", "agent_id": "agent_123", "decision": "DENY", "context": {"action": "delete_file", "target": "file:production.db"}}
 2026-02-26 14:10:01,816 - {"timestamp": "2026-02-26T14:10:01.816255", "event_type": "IAM_PROVISION", "agent_id": "agt_cff71b70", "decision": null, "context": {"role_name": "api_tester", "description": "Integration test agent", "scopes": ["execute:test_tool", "read:logs"], "ttl_seconds": 300}}
 2026-02-26 14:10:01,820 - {"timestamp": "2026-02-26T14:10:01.820438", "event_type": "IAM_REVOKE", "agent_id": "agt_cff71b70", "decision": null, "context": {}}
+2026-02-26 14:47:08,814 - {"timestamp": "2026-02-26T14:47:08.814098", "event_type": "IAM_PROVISION", "agent_id": "agt_70b2fe21", "decision": null, "context": {"role_name": "webhook_tester", "description": "Tester", "scopes": ["*"], "ttl_seconds": 300}}
+2026-02-26 14:47:08,821 - {"timestamp": "2026-02-26T14:47:08.820997", "event_type": "APPROVAL_REQUEST", "agent_id": "agt_70b2fe21", "decision": "PENDING", "context": {"action": "transmit_external", "target": "https://evil.local"}}
+2026-02-26 14:47:08,826 - {"timestamp": "2026-02-26T14:47:08.826690", "event_type": "APPROVAL_GRANTED", "agent_id": "agt_70b2fe21", "decision": null, "context": {"action_id": "876fa285-9a38-4785-8d6b-fb4d942765e6"}}

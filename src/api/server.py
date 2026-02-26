@@ -13,8 +13,13 @@ from src.guards.intent_validator import IntentValidator, AgentState, ValidationD
 from src.guards.multi_agent_monitor import MultiAgentMonitor, AgentMessage
 from src.guards.context_governor import ContextGovernor
 from src.guards.anomaly_detector import AnomalyDetector
+from src.db.persistent_store import PersistentStore
+import uuid
 
-# Persistent DB simulation (Global state for MVP FastAPI server)
+# Persistent DB connection
+persistent_store = PersistentStore()
+
+# Import AVARA guard systems (using in-memory instances where DB not fully retrofitted yet)
 iam_service = IAMService()
 tool_registry = ToolRegistry()
 tool_guard = ToolGuard(tool_registry)
@@ -109,13 +114,63 @@ def validate_agent_action(request: ValidateActionRequest):
     
     breaker_status = circuit_breaker.evaluate_action(action)
     if breaker_status == CircuitBreakerStatus.HALT_REQUIRE_APPROVAL:
-        # Here we mock external workflow trigger
+        action_id = str(uuid.uuid4())
+        # Store pending approval in DB
+        persistent_store.save_approval(action_id, request.agent_id, request.proposed_action, request.target_resource, request.action_args, "PENDING")
         audit_ledger.log_approval_request(request.agent_id, request.proposed_action, request.target_resource, "PENDING")
-        raise HTTPException(status_code=403, detail="Blocked: High-risk action halted by Circuit Breaker. Human approval required.")
+        
+        # Simulate firing off an async webhook to a designated channel (Slack, Email, etc.)
+        print(f"\n[WEBHOOK TRIGGERED] Action {action_id} requires human approval.")
+        print(f"--> POST /slack/avara-alerts payload=... \n")
+        
+        # We return 403 but with a specific detail object dictating that it is pending approval
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail={
+                "error": "Blocked: High-risk action halted by Circuit Breaker. Human approval required.",
+                "action_id": action_id,
+                "status": "PENDING_APPROVAL"
+            }
+        )
 
     # If all passes
     audit_ledger.log_event("ACTION_ALLOW", request.agent_id, request.model_dump())
     return {"status": "allowed"}
+
+# ----------------- Routes: Webhook Approvals -----------------
+@app.post("/guard/approvals/{action_id}/approve")
+def approve_action(action_id: str):
+    """External webhook callback to approve a pending action."""
+    approval = persistent_store.get_approval(action_id)
+    if not approval:
+        raise HTTPException(status_code=404, detail="Approval request not found.")
+    if approval["status"] != "PENDING":
+        raise HTTPException(status_code=400, detail=f"Action is already {approval['status']}.")
+        
+    persistent_store.update_approval_status(action_id, "APPROVED")
+    audit_ledger.log_event("APPROVAL_GRANTED", approval["agent_id"], {"action_id": action_id})
+    return {"status": "success", "message": f"Action {action_id} approved. Agent may proceed."}
+
+@app.post("/guard/approvals/{action_id}/deny")
+def deny_action(action_id: str):
+    """External webhook callback to deny a pending action."""
+    approval = persistent_store.get_approval(action_id)
+    if not approval:
+        raise HTTPException(status_code=404, detail="Approval request not found.")
+    if approval["status"] != "PENDING":
+        raise HTTPException(status_code=400, detail=f"Action is already {approval['status']}.")
+        
+    persistent_store.update_approval_status(action_id, "DENIED")
+    audit_ledger.log_event("APPROVAL_DENIED", approval["agent_id"], {"action_id": action_id})
+    return {"status": "success", "message": f"Action {action_id} strictly denied."}
+
+@app.get("/guard/approvals/{action_id}/status")
+def check_approval_status(action_id: str):
+    """Agents can poll this endpoint to see if they were approved to proceed."""
+    approval = persistent_store.get_approval(action_id)
+    if not approval:
+        raise HTTPException(status_code=404, detail="Approval request not found.")
+    return {"action_id": action_id, "status": approval["status"]}
 
 # ----------------- Routes: Context & RAG -----------------
 

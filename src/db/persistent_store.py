@@ -52,6 +52,19 @@ class PersistentStore:
                     timestamp REAL
                 )
             ''')
+            
+            # Pending Approvals
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS approvals (
+                    action_id TEXT PRIMARY KEY,
+                    agent_id TEXT,
+                    action_type TEXT,
+                    target TEXT,
+                    parameters TEXT,
+                    status TEXT,
+                    timestamp REAL
+                )
+            ''')
             conn.commit()
 
     # --- IAM Persistence ---
@@ -116,3 +129,32 @@ class PersistentStore:
                 (agent_id, threshold)
             )
             return [{"action": row[0], "target": row[1], "timestamp": row[2]} for row in cursor.fetchall()]
+
+    # --- Approvals Persistence ---
+    def save_approval(self, action_id: str, agent_id: str, action_type: str, target: str, parameters: dict, status: str = "PENDING"):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO approvals (action_id, agent_id, action_type, target, parameters, status, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (action_id, agent_id, action_type, target, json.dumps(parameters), status, time.time())
+            )
+
+    def get_approval(self, action_id: str) -> Optional[Dict[str, Any]]:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT agent_id, action_type, target, parameters, status, timestamp FROM approvals WHERE action_id = ?", (action_id,))
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "action_id": action_id,
+                    "agent_id": row[0],
+                    "action_type": row[1],
+                    "target": row[2],
+                    "parameters": json.loads(row[3]),
+                    "status": row[4],
+                    "timestamp": row[5]
+                }
+        return None
+
+    def update_approval_status(self, action_id: str, new_status: str):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE approvals SET status = ?, timestamp = ? WHERE action_id = ?", (new_status, time.time(), action_id))
+
