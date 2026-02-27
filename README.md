@@ -19,28 +19,83 @@ AVARA introduces a new control layer — an **always-on runtime authority** that
 
 ## System Architecture
 
-```
-User / System
-     |
-Agent Framework (LangGraph / CrewAI / AutoGen)
-     |
-┌──────────────────────────────────────────┐
-│                AVARA                     │
-│ ──────────────────────────────────────── │
-│  • Intent Validator                      │
-│  • RAG Provenance Firewall               │
-│  • Tool & MCP Execution Guard            │
-│  • Agent IAM (Non-Human Identity)        │
-│  • Excessive-Agency Circuit Breaker      │
-│  • Multi-Agent Safety Monitor            │
-│  • Context Governor                      │
-│  • Audit & Forensics Ledger              │
-└──────────────────────────────────────────┘
-     |
-LLMs | Vector DBs | MCP Tools | SaaS APIs
+```mermaid
+graph TD
+    U["User / System"] --> AF["Agent Framework<br/>(LangGraph / CrewAI / AutoGen)"]
+    AF --> AVARA
+
+    subgraph AVARA["AVARA Runtime Authority"]
+        IV["Intent Validator"]
+        RF["RAG Provenance Firewall"]
+        TG["Tool & MCP Execution Guard"]
+        IAM["Agent IAM"]
+        CB["Circuit Breaker"]
+        MAM["Multi-Agent Monitor"]
+        CG["Context Governor"]
+        AL["Audit & Forensics Ledger"]
+    end
+
+    AVARA --> EXT["LLMs · Vector DBs · MCP Tools · SaaS APIs"]
+
+    style AVARA fill:#1a1a2e,stroke:#e67e22,stroke-width:2px,color:#fff
+    style U fill:#2d2d44,stroke:#e67e22,color:#fff
+    style AF fill:#2d2d44,stroke:#e67e22,color:#fff
+    style EXT fill:#2d2d44,stroke:#e67e22,color:#fff
 ```
 
-AVARA is a **sidecar / gateway**, not a rewrite.
+---
+
+## Secure Agent Execution Flow
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Agent
+    participant AVARA
+    participant Tool
+
+    User->>Agent: Issues Task
+    Agent->>AVARA: Request Action
+    AVARA->>AVARA: Validate Intent
+    AVARA->>AVARA: Check Permissions (IAM)
+    AVARA->>AVARA: Evaluate Risk Level
+    alt Low Risk — Allowed
+        AVARA->>Tool: Execute Tool Call
+        Tool->>Agent: Return Result
+    else High Risk — Halted
+        AVARA-->>Agent: 403 PENDING_APPROVAL
+        AVARA->>Human: Webhook Notification
+        Human->>AVARA: Approve / Deny
+        alt Approved
+            AVARA->>Tool: Execute Tool Call
+            Tool->>Agent: Return Result
+        else Denied
+            AVARA-->>Agent: Action Permanently Blocked
+        end
+    end
+```
+
+---
+
+## Circuit Breaker Webhook Flow
+
+```mermaid
+flowchart LR
+    A["Agent Action<br/>(HIGH risk)"] --> CB["Circuit Breaker"]
+    CB --> DB["Persist to SQLite<br/>(status: PENDING)"]
+    CB --> WH["Fire Webhook<br/>(Slack / Email / CLI)"]
+    CB --> R403["Return 403<br/>+ action_id"]
+
+    WH --> HR["Human Review"]
+    HR -->|Approve| AP["/approvals/{id}/approve"]
+    HR -->|Deny| DN["/approvals/{id}/deny"]
+    AP --> DB2["Update DB<br/>(status: APPROVED)"]
+    DN --> DB3["Update DB<br/>(status: DENIED)"]
+
+    style CB fill:#e74c3c,stroke:#c0392b,color:#fff
+    style DB fill:#2d2d44,stroke:#e67e22,color:#fff
+    style R403 fill:#e67e22,stroke:#d35400,color:#fff
+```
 
 ---
 
@@ -83,7 +138,7 @@ AVARA/
 │   │   └── persistent_store.py    # SQLite persistence layer
 │   └── integrations/
 │       └── langchain_adapter.py   # LangChain callback handler
-├── avara_cli.py                   # CLI management tool
+├── avara_cli.py                   # Interactive CLI management tool
 ├── Dockerfile                     # Container image
 ├── docker-compose.yml             # Docker Compose config
 └── requirements.txt               # Python dependencies
@@ -113,24 +168,43 @@ uvicorn src.api.server:app --host 0.0.0.0 --port 8000
 
 ## AVARA CLI
 
-Security engineers use the CLI to manage identities and approvals directly from the terminal.
+The CLI supports both **direct commands** and a fully **interactive REPL mode**.
+
+### Direct Commands
 
 ```bash
-# Check server health
 ./avara_cli.py status
-
-# Provision a new agent identity
-./avara_cli.py provision prod_agent "Marketing Bot" --scopes execute:read_file api:query --ttl 3600
-
-# View halted high-risk actions
+./avara_cli.py provision prod_agent "Marketing Bot" --scopes execute:read_file api:query
 ./avara_cli.py pending
-
-# Approve or deny a halted action
 ./avara_cli.py approve <action_id>
 ./avara_cli.py deny <action_id>
-
-# Revoke an agent identity
 ./avara_cli.py revoke <agent_id>
+./avara_cli.py logs
+```
+
+### Interactive Mode
+
+```bash
+./avara_cli.py
+# Launches the AVARA shell — type commands interactively
+```
+
+```
+avara> status
+  ✔  AVARA Authority is ONLINE
+
+avara> provision prod_agent "My Bot" --scopes execute:read_file
+  ✔  Identity provisioned
+  Agent ID : agt_d67298cf
+
+avara> pending
+  No pending approvals. All clear.
+
+avara> logs
+  [2026-02-27 20:00:01] IAM_PROVISION  agt_d67298cf  ...
+  [2026-02-27 20:00:03] ACTION_ALLOW   agt_d67298cf  ...
+
+avara> exit
 ```
 
 ---
@@ -147,24 +221,6 @@ Security engineers use the CLI to manage identities and approvals directly from 
 | `POST` | `/guard/approvals/{id}/deny` | Webhook callback — deny halted action |
 | `GET` | `/guard/approvals/{id}/status` | Poll approval status |
 | `GET` | `/health` | Server health check |
-
----
-
-## Circuit Breaker & Webhooks
-
-When the Circuit Breaker detects a `HIGH` risk action, it:
-
-1. **Halts execution** — returns HTTP `403` with a unique `action_id`
-2. **Persists the request** to SQLite for durability
-3. **Waits for external resolution** via webhook callback
-
-```bash
-# Agent gets blocked:
-# {"error": "...", "action_id": "876fa285-...", "status": "PENDING_APPROVAL"}
-
-# Security engineer resolves it:
-curl -X POST http://127.0.0.1:8000/guard/approvals/876fa285-.../approve
-```
 
 ---
 
