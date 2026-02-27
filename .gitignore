@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+venv/
+avara_state.db
+logs/
+*.log
+.DS_Store

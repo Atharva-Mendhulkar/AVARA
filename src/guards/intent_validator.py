@@ -35,6 +35,11 @@ class IntentValidator:
         # We mock a drift if the agent tries to send an email when asked to parse a file.
         if "analyze" in task.lower() and "email" in action.lower():
             return 0.9  
+        
+        # Catch our Interactive Demo severe drift scenario:
+        if "summarize" in task.lower() and "delete" in action.lower():
+            return 0.9
+            
         return 0.1
         
     def validate_action(self, state: AgentState) -> ValidationDecision:
