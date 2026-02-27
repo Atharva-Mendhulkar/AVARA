@@ -23,22 +23,37 @@ graph TD
     AF --> AVARA
 
     subgraph AVARA["AVARA Runtime Authority"]
+        IAM["Agent IAM"]
         IV["Intent Validator"]
         RF["RAG Provenance Firewall"]
         TG["Tool & MCP Execution Guard"]
-        IAM["Agent IAM"]
-        CB["Circuit Breaker"]
-        MAM["Multi-Agent Monitor"]
+        CB["Excessive-Agency Circuit Breaker"]
         CG["Context Governor"]
+        AD["Anomaly Detector (Async)"]
         AL["Audit & Forensics Ledger"]
     end
 
-    AVARA --> EXT["LLMs · Vector DBs · MCP Tools · SaaS APIs"]
+    IAM --> IV
+    IV --> RF
+    RF --> TG
+    TG --> CB
+    CB --> CG
+
+    IAM --> AL
+    IV --> AL
+    RF --> AL
+    TG --> AL
+    CB --> AL
+    CG --> AL
+
+    AL --> AD
+
+    CG --> LLM["LLMs"]
+    CG --> VDB["Vector DBs (Untrusted)"]
+    CG --> MCP["MCP / Tools"]
+    CG --> API["External APIs"]
 
     style AVARA fill:#1a1a2e,stroke:#e67e22,stroke-width:2px,color:#fff
-    style U fill:#2d2d44,stroke:#e67e22,color:#fff
-    style AF fill:#2d2d44,stroke:#e67e22,color:#fff
-    style EXT fill:#2d2d44,stroke:#e67e22,color:#fff
 ```
 
 ---
@@ -51,24 +66,36 @@ sequenceDiagram
     participant Agent
     participant AVARA
     participant Tool
+    participant Audit as Audit Ledger
+    participant Human
 
     User->>Agent: Issues Task
     Agent->>AVARA: Request Action
+
+    AVARA->>AVARA: Authenticate Agent (IAM)
     AVARA->>AVARA: Validate Intent
-    AVARA->>AVARA: Check Permissions (IAM)
-    AVARA->>AVARA: Evaluate Risk Level
+    AVARA->>AVARA: Check Permissions
+    AVARA->>AVARA: Evaluate Risk
+    AVARA->>Audit: Write Decision Record
+
     alt Low Risk — Allowed
         AVARA->>Tool: Execute Tool Call
         Tool->>Agent: Return Result
+        AVARA->>Audit: Log Execution Result
     else High Risk — Halted
+        AVARA->>Audit: Persist Action (PENDING)
         AVARA-->>Agent: 403 PENDING_APPROVAL
         AVARA->>Human: Webhook Notification
-        Human->>AVARA: Approve / Deny
+
         alt Approved
+            Human->>AVARA: Approve Action
             AVARA->>Tool: Execute Tool Call
             Tool->>Agent: Return Result
+            AVARA->>Audit: Log Approved Execution
         else Denied
-            AVARA-->>Agent: Action Permanently Blocked
+            Human->>AVARA: Deny Action
+            AVARA->>Audit: Log Permanent Denial
+            AVARA-->>Agent: Action Blocked
         end
     end
 ```
@@ -79,16 +106,19 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    A["Agent Action<br/>(HIGH risk)"] --> CB["Circuit Breaker"]
-    CB --> DB["Persist to SQLite<br/>(status: PENDING)"]
+    A["Agent Action<br/>(HIGH Risk)"] --> CB["Circuit Breaker"]
+
+    CB --> DB["SQLite: Actions Table<br/>(status = PENDING)"]
     CB --> WH["Fire Webhook<br/>(Slack / Email / CLI)"]
     CB --> R403["Return 403<br/>+ action_id"]
 
     WH --> HR["Human Review"]
-    HR -->|Approve| AP["/approvals/{id}/approve"]
-    HR -->|Deny| DN["/approvals/{id}/deny"]
-    AP --> DB2["Update DB<br/>(status: APPROVED)"]
-    DN --> DB3["Update DB<br/>(status: DENIED)"]
+
+    HR -->|Approve| AP["POST /approvals/{id}/approve"]
+    HR -->|Deny| DN["POST /approvals/{id}/deny"]
+
+    AP --> DB2["Update Action<br/>(status = APPROVED)"]
+    DN --> DB3["Update Action<br/>(status = DENIED)"]
 
     style CB fill:#e74c3c,stroke:#c0392b,color:#fff
     style DB fill:#2d2d44,stroke:#e67e22,color:#fff
