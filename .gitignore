@@ -5,3 +5,4 @@ avara_state.db
 logs/
 *.log
 .DS_Store
+manual_test_guide.txt
