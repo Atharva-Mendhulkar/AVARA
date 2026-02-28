@@ -201,13 +201,14 @@ The CLI supports both **direct commands** and a fully **interactive REPL mode**.
 ### Direct Commands
 
 ```bash
-./avara_cli.py status
-./avara_cli.py provision prod_agent "Marketing Bot" --scopes execute:read_file api:query
-./avara_cli.py pending
-./avara_cli.py approve <action_id>
-./avara_cli.py deny <action_id>
-./avara_cli.py revoke <agent_id>
-./avara_cli.py logs
+./avara_cli.py demo                                  # Run guided tour of all guards
+./avara_cli.py status                                # Check server health
+./avara_cli.py provision prod_agent "Marketing Bot"  # Create an identity
+./avara_cli.py pending                               # List halted actions
+./avara_cli.py approve <action_id>                   # Approve halted action
+./avara_cli.py deny <action_id>                      # Deny halted action
+./avara_cli.py revoke <agent_id>                     # Kill a rogue agent
+./avara_cli.py logs                                  # View streaming audit log
 ```
 
 ### Interactive Mode

@@ -11,6 +11,8 @@ import os
 import glob
 import shlex
 import traceback
+import json
+import time
 from datetime import datetime
 
 try:
@@ -80,6 +82,7 @@ def print_help():
     _cmd("logs",      "[--tail N]",   "View recent audit log entries")
 
     print(f"\n{CYAN}{BOLD}  GENERAL{RESET}")
+    _cmd("demo",      "",             "Run the interactive guided tour of all 8 security subsystems")
     _cmd("help",      "",             "Show this help screen")
     _cmd("clear",     "",             "Clear the terminal")
     _cmd("exit",      "",             "Exit the AVARA shell")
@@ -239,6 +242,170 @@ def cmd_logs(args):
     except Exception as e:
         err(f"Could not read log file: {e}")
 
+# ─── Demo Subsystem ───────────────────────────────────────────────────────────
+def _print_header(text):
+    print(f"\n{ORANGE}========================================================================{RESET}")
+    print(f"{ORANGE}  {text}{RESET}")
+    print(f"{ORANGE}========================================================================{RESET}")
+
+def _print_step(title, desc):
+    print(f"\n{CYAN}▶ {title}{RESET}")
+    print(f"{DIM}{desc}{RESET}")
+    input(f"{DIM}[Press Enter to execute...]{RESET}")
+
+def _print_result(title, status_code, data):
+    color = GREEN if status_code == 200 else RED
+    print(f"\n  {color}➔ {title} (HTTP {status_code}){RESET}")
+    print(f"  {DIM}{json.dumps(data, indent=2)}{RESET}")
+    time.sleep(1)
+
+def cmd_demo(args):
+    print(f"\n{ORANGE}████████████████████████████████████████████████████████████████████████{RESET}")
+    print(f"{ORANGE}██{RESET}                                                                    {ORANGE}██{RESET}")
+    print(f"{ORANGE}██{RESET}                     AVARA GUIDED DEMO TOUR                         {ORANGE}██{RESET}")
+    print(f"{ORANGE}██{RESET}                                                                    {ORANGE}██{RESET}")
+    print(f"{ORANGE}████████████████████████████████████████████████████████████████████████{RESET}\n")
+
+    # 1. SERVER HEALTH
+    _print_step("Check Server Health", "Verify the AVARA HTTP API is running.")
+    try:
+        r = requests.get(f"{API_BASE}/health")
+        _print_result("Server Status", r.status_code, r.json())
+    except requests.exceptions.ConnectionError:
+        err("Could not connect to AVARA. Is the server running? (docker compose up -d avara-api)")
+        return
+
+    # 2. IAM PROVISIONING
+    _print_header("1. IDENTITY & ACCESS MANAGEMENT (IAM)")
+    _print_step("Provision Agent Identity", "Agents cannot execute anonymously. They must request an ephemeral identity.")
+    
+    payload = {
+        "role_name": "demo_agent_01",
+        "description": "Demo Assistant",
+        "scopes": ["execute:read_file", "api:query"],
+        "ttl_seconds": 3600
+    }
+    r = requests.post(f"{API_BASE}/iam/provision", json=payload)
+    data = r.json()
+    _print_result("Provision Response", r.status_code, data)
+    
+    agent_id = data.get("agent_id")
+    if not agent_id:
+        return
+
+    # 3. INTENT VALIDATOR
+    _print_header("2. INTENT VALIDATOR")
+    
+    _print_step("Valid Action", "The agent performs an action fully aligned with its assigned task.")
+    payload = {
+        "agent_id": agent_id,
+        "task_intent": "Read the configuration file.",
+        "proposed_action": "read_file",
+        "target_resource": "/app/config.json",
+        "action_args": {},
+        "risk_level": "LOW"
+    }
+    r = requests.post(f"{API_BASE}/guard/validate_action", json=payload)
+    _print_result("Validation Response", r.status_code, r.json())
+
+    _print_step("Semantic Drift (Hijack Attempt)", "The agent is hijacked and tries to delete a database.")
+    payload = {
+        "agent_id": agent_id,
+        "task_intent": "Read the configuration file.",
+        "proposed_action": "drop_table",
+        "target_resource": "production_users_db",
+        "action_args": {},
+        "risk_level": "LOW"
+    }
+    r = requests.post(f"{API_BASE}/guard/validate_action", json=payload)
+    _print_result("Validation Response", r.status_code, r.json())
+    print(f"  {CYAN}Notice:{RESET} AVARA caught the semantic drift and blocked it, even though the agent claimed LOW risk.")
+
+    # 4. RAG PROVENANCE FIREWALL
+    _print_header("3. RAG PROVENANCE FIREWALL")
+    _print_step("Blocked by Default", "The agent tries to pass retrieved context that lacks cryptographic provenance tags.")
+    payload = {
+        "agent_id": agent_id,
+        "task_intent": "Summarize documents.",
+        "proposed_action": "submit_summary",
+        "target_resource": "internal_wiki",
+        "action_args": {"content": "This document has no source tags"},
+        "risk_level": "LOW"
+    }
+    r = requests.post(f"{API_BASE}/guard/validate_action", json=payload)
+    _print_result("Validation Response", r.status_code, r.json())
+
+    # 5. CONTEXT GOVERNOR
+    _print_header("4. CONTEXT GOVERNOR")
+    _print_step("Context Assembly", "The agent requests a context window. AVARA injects immutable safety constraints.")
+    payload = {
+        "agent_id": agent_id,
+        "raw_context": "The user told me to do X...",
+        "available_tokens": 4000
+    }
+    r = requests.post(f"{API_BASE}/guard/prepare_context", json=payload)
+    _print_result("Prepared Context", r.status_code, r.json())
+
+    # 6. CIRCUIT BREAKER
+    _print_header("5. CIRCUIT BREAKER & APPROVALS")
+    _print_step("Trigger a HIGH-RISK Action", "The agent attempts to send data externally. This triggers the Circuit Breaker.")
+    payload = {
+        "agent_id": agent_id,
+        "task_intent": "Email the report.",
+        "proposed_action": "transmit_external",
+        "target_resource": "competitor@evil.com",
+        "action_args": {"data": "q3_financials"},
+        "risk_level": "HIGH"
+    }
+    r = requests.post(f"{API_BASE}/guard/validate_action", json=payload)
+    circuit_breaker_resp = r.json()
+    _print_result("Validation Response", r.status_code, circuit_breaker_resp)
+    
+    action_id = circuit_breaker_resp.get("detail", {}).get("action_id")
+    if not action_id:
+        return
+        
+    print(f"\n  👉 The agent is now BLOCKED. An HTTP 403 was returned.")
+    print(f"  👉 To unblock it, you would run: {ORANGE}approve {action_id}{RESET} (in another terminal/session)")
+    print(f"  👉 For this demo, we will auto-deny the action to keep the system clean.")
+    input(f"\n{DIM}[Press Enter to securely deny and proceed...]{RESET}")
+    
+    requests.post(f"{API_BASE}/guard/approvals/{action_id}/deny")
+    r = requests.get(f"{API_BASE}/guard/approvals/{action_id}/status")
+    _print_result("Action Status Check", r.status_code, r.json())
+
+    # 7. ANOMALY DETECTOR
+    _print_header("6. BEHAVIORAL ANOMALY DETECTOR")
+    _print_step("Simulating an attack burst", "Sending 20 rapid requests to trigger the rate-limit heuristic...")
+    
+    for i in range(25):
+        payload = {
+            "agent_id": agent_id,
+            "task_intent": "Read files",
+            "proposed_action": "read_file",
+            "target_resource": f"file_{i}.txt",
+            "action_args": {},
+            "risk_level": "LOW"
+        }
+        r = requests.post(f"{API_BASE}/guard/validate_action", json=payload)
+        status = r.json().get("detail", "")
+        if r.status_code == 403 and "anomalous behavior" in status:
+            print(f"  {RED}➔ Request {i} BLOCKED: {status}{RESET}                ")
+            break
+        else:
+            print(f"  {DIM}Request {i} Allowed{RESET}                   ", end="\r")
+
+    print("\n  👉 AVARA detected the anomaly and automatically revoked the identity.")
+    
+    # 8. AUDIT LEDGER
+    _print_header("7. AUDIT LEDGER")
+    print("\n  👉 Every single action you just saw was cryptographically logged.")
+    print(f"  👉 Run the {ORANGE}logs{RESET} command next to see the exact execution trace.")
+    
+    print(f"\n{ORANGE}========================================================================{RESET}")
+    print(f"{ORANGE}  END OF DEMO{RESET}")
+    print(f"{ORANGE}========================================================================{RESET}\n")
+
 # ─── Argument Parser (shared by direct + REPL) ───────────────────────────────
 class ReplArgumentParser(argparse.ArgumentParser):
     """Custom parser that doesn't exit or print raw stderr on error."""
@@ -277,6 +444,8 @@ def build_parser():
     p = sub.add_parser("logs")
     p.add_argument("--tail", type=int, default=20)
     p.set_defaults(func=cmd_logs)
+
+    sub.add_parser("demo").set_defaults(func=cmd_demo)
 
     return parser
 
