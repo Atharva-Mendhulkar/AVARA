@@ -25,8 +25,8 @@ DB_PATH = "avara_state.db"
 LOG_DIR = "./logs"
 VERSION = "1.0.0"
 
-# ─── ANSI Colors ─────────────────────────────────────────────────────────────
-ORANGE = "\033[38;5;208m"
+# ─── ANSI Colors & Theming ───────────────────────────────────────────────────
+# Base colors
 YELLOW = "\033[38;5;220m"
 CYAN   = "\033[96m"
 GREEN  = "\033[92m"
@@ -37,8 +37,31 @@ RESET  = "\033[0m"
 BOLD   = "\033[1m"
 DIM    = "\033[2m"
 
-# ─── ASCII Logo ───────────────────────────────────────────────────────────────
-LOGO = rf"""{ORANGE}{BOLD}
+# Theme palettes (mapped to PRIMARY)
+THEMES = {
+    "orange": "\033[38;5;208m",
+    "blue":   "\033[38;5;33m",
+    "purple": "\033[38;5;135m",
+    "green":  "\033[38;5;46m",
+    "red":    "\033[38;5;196m"
+}
+
+# The active primary color (defaults to ORANGE)
+PRIMARY = THEMES["orange"]
+
+# Dynamic UI elements (set during theme init)
+LOGO = ""
+TAGLINE = ""
+DIVIDER = ""
+PROMPT = ""
+
+def apply_theme(theme_name):
+    global PRIMARY, LOGO, TAGLINE, DIVIDER, PROMPT
+    
+    if theme_name in THEMES:
+        PRIMARY = THEMES[theme_name]
+        
+    LOGO = rf"""{PRIMARY}{BOLD}
   /$$$$$$  /$$    /$$  /$$$$$$  /$$$$$$$   /$$$$$$
  /$$__  $$| $$   | $$ /$$__  $$| $$__  $$ /$$__  $$
 | $$  \ $$| $$   | $$| $$  \ $$| $$  \ $$| $$  \ $$
@@ -49,9 +72,12 @@ LOGO = rf"""{ORANGE}{BOLD}
 |__/  |__/    \_/    |__/  |__/|__/  |__/|__/  |__/
 {RESET}"""
 
-TAGLINE = f"{GRAY}  Autonomous Validation & Agent Risk Authority  ·  v{VERSION}{RESET}"
-DIVIDER = f"{GRAY}{'─' * 62}{RESET}"
-PROMPT  = f"{ORANGE}{BOLD}avara>{RESET} "
+    TAGLINE = f"{GRAY}  Autonomous Validation & Agent Risk Authority  ·  v{VERSION}{RESET}"
+    DIVIDER = f"{GRAY}{'─' * 62}{RESET}"
+    PROMPT  = f"{PRIMARY}{BOLD}avara>{RESET} "
+
+# Initialize default theme eagerly for top-level evals
+apply_theme("orange")
 
 # ─── Output Helpers ───────────────────────────────────────────────────────────
 def ok(msg):   print(f"  {GREEN}✔{RESET}  {msg}")
@@ -91,7 +117,7 @@ def print_help():
     print(f"  {DIM}Server: {API_BASE}  ·  DB: {DB_PATH}  ·  Logs: {LOG_DIR}{RESET}\n")
 
 def _cmd(name, args, desc):
-    print(f"    {ORANGE}{BOLD}{name:<12}{RESET} {WHITE}{args:<36}{RESET} {DIM}{desc}{RESET}")
+    print(f"    {PRIMARY}{BOLD}{name:<12}{RESET} {WHITE}{args:<36}{RESET} {DIM}{desc}{RESET}")
 
 # ─── Command Handlers ─────────────────────────────────────────────────────────
 def cmd_provision(args):
@@ -119,7 +145,7 @@ def cmd_revoke(args):
     try:
         r = requests.delete(f"{API_BASE}/iam/revoke/{args.agent_id}", timeout=5)
         r.raise_for_status()
-        ok(f"Identity {ORANGE}{args.agent_id}{RESET} revoked.")
+        ok(f"Identity {PRIMARY}{args.agent_id}{RESET} revoked.")
     except requests.exceptions.ConnectionError:
         err("Cannot reach AVARA server. Is it running?")
     except Exception as e:
@@ -182,7 +208,7 @@ def cmd_resolve(args, decision):
         r = requests.post(f"{API_BASE}/guard/approvals/{args.action_id}/{decision}", timeout=5)
         r.raise_for_status()
         verb = "approved" if decision == "approve" else "denied"
-        ok(f"Action {ORANGE}{args.action_id}{RESET} {verb}.")
+        ok(f"Action {PRIMARY}{args.action_id}{RESET} {verb}.")
     except requests.exceptions.HTTPError as e:
         err(f"Server: {e.response.text}")
     except requests.exceptions.ConnectionError:
@@ -244,9 +270,9 @@ def cmd_logs(args):
 
 # ─── Demo Subsystem ───────────────────────────────────────────────────────────
 def _print_header(text):
-    print(f"\n{ORANGE}========================================================================{RESET}")
-    print(f"{ORANGE}  {text}{RESET}")
-    print(f"{ORANGE}========================================================================{RESET}")
+    print(f"\n{PRIMARY}========================================================================{RESET}")
+    print(f"{PRIMARY}  {text}{RESET}")
+    print(f"{PRIMARY}========================================================================{RESET}")
 
 def _print_step(title, desc):
     print(f"\n{CYAN}▶ {title}{RESET}")
@@ -260,11 +286,11 @@ def _print_result(title, status_code, data):
     time.sleep(1)
 
 def cmd_demo(args):
-    print(f"\n{ORANGE}████████████████████████████████████████████████████████████████████████{RESET}")
-    print(f"{ORANGE}██{RESET}                                                                    {ORANGE}██{RESET}")
-    print(f"{ORANGE}██{RESET}                     AVARA GUIDED DEMO TOUR                         {ORANGE}██{RESET}")
-    print(f"{ORANGE}██{RESET}                                                                    {ORANGE}██{RESET}")
-    print(f"{ORANGE}████████████████████████████████████████████████████████████████████████{RESET}\n")
+    print(f"\n{PRIMARY}████████████████████████████████████████████████████████████████████████{RESET}")
+    print(f"{PRIMARY}██{RESET}                                                                    {PRIMARY}██{RESET}")
+    print(f"{PRIMARY}██{RESET}                     AVARA GUIDED DEMO TOUR                         {PRIMARY}██{RESET}")
+    print(f"{PRIMARY}██{RESET}                                                                    {PRIMARY}██{RESET}")
+    print(f"{PRIMARY}████████████████████████████████████████████████████████████████████████{RESET}\n")
 
     # 1. SERVER HEALTH
     _print_step("Check Server Health", "Verify the AVARA HTTP API is running.")
@@ -366,7 +392,7 @@ def cmd_demo(args):
         return
         
     print(f"\n  👉 The agent is now BLOCKED. An HTTP 403 was returned.")
-    print(f"  👉 To unblock it, you would run: {ORANGE}approve {action_id}{RESET} (in another terminal/session)")
+    print(f"  👉 To unblock it, you would run: {PRIMARY}approve {action_id}{RESET} (in another terminal/session)")
     print(f"  👉 For this demo, we will auto-deny the action to keep the system clean.")
     input(f"\n{DIM}[Press Enter to securely deny and proceed...]{RESET}")
     
@@ -400,11 +426,11 @@ def cmd_demo(args):
     # 8. AUDIT LEDGER
     _print_header("7. AUDIT LEDGER")
     print("\n  👉 Every single action you just saw was cryptographically logged.")
-    print(f"  👉 Run the {ORANGE}logs{RESET} command next to see the exact execution trace.")
+    print(f"  👉 Run the {PRIMARY}logs{RESET} command next to see the exact execution trace.")
     
-    print(f"\n{ORANGE}========================================================================{RESET}")
-    print(f"{ORANGE}  END OF DEMO{RESET}")
-    print(f"{ORANGE}========================================================================{RESET}\n")
+    print(f"\n{PRIMARY}========================================================================{RESET}")
+    print(f"{PRIMARY}  END OF DEMO{RESET}")
+    print(f"{PRIMARY}========================================================================{RESET}\n")
 
 # ─── Argument Parser (shared by direct + REPL) ───────────────────────────────
 class ReplArgumentParser(argparse.ArgumentParser):
@@ -414,7 +440,12 @@ class ReplArgumentParser(argparse.ArgumentParser):
         raise ValueError(message)
 
 def build_parser():
+    # We create a parent parser to pull off global config arguments before the subcommand
     parser = ReplArgumentParser(add_help=False)
+    
+    # Global arguments
+    parser.add_argument("--theme", choices=THEMES.keys(), help=argparse.SUPPRESS)
+    
     sub = parser.add_subparsers(dest="command")
 
     p = sub.add_parser("provision")
@@ -485,6 +516,15 @@ def interactive_mode():
             err(f"Parse error: {e}")
             continue
 
+        # Extract theme dynamically in REPL mode
+        if "--theme" in tokens:
+            idx = tokens.index("--theme")
+            if idx + 1 < len(tokens):
+                theme_arg = tokens[idx + 1]
+                if theme_arg in THEMES:
+                    apply_theme(theme_arg)
+                    print_banner()
+
         try:
             args = parser.parse_args(tokens)
         except ValueError as e:
@@ -518,6 +558,12 @@ def main():
 
     # Direct command mode
     parser = build_parser()
+
+    # Pre-parse just to extract --theme if present
+    pre_args, _ = parser.parse_known_args()
+    if getattr(pre_args, 'theme', None):
+        apply_theme(pre_args.theme)
+
     try:
         args = parser.parse_args()
     except SystemExit:
