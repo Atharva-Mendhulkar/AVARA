@@ -108,6 +108,7 @@ def print_help():
     _cmd("logs",      "[--tail N]",   "View recent audit log entries")
 
     print(f"\n{CYAN}{BOLD}  GENERAL{RESET}")
+    _cmd("theme",     "<color>",      "Change the UI color theme (orange, blue, purple, green, red)")
     _cmd("demo",      "",             "Run the interactive guided tour of all 8 security subsystems")
     _cmd("help",      "",             "Show this help screen")
     _cmd("clear",     "",             "Clear the terminal")
@@ -432,6 +433,14 @@ def cmd_demo(args):
     print(f"{PRIMARY}  END OF DEMO{RESET}")
     print(f"{PRIMARY}========================================================================{RESET}\n")
 
+def cmd_theme(args):
+    theme_name = args.color
+    if theme_name in THEMES:
+        apply_theme(theme_name)
+        print_banner()
+    else:
+        err(f"Unknown theme: {theme_name}. Choose from: {', '.join(THEMES.keys())}")
+
 # ─── Argument Parser (shared by direct + REPL) ───────────────────────────────
 class ReplArgumentParser(argparse.ArgumentParser):
     """Custom parser that doesn't exit or print raw stderr on error."""
@@ -440,12 +449,7 @@ class ReplArgumentParser(argparse.ArgumentParser):
         raise ValueError(message)
 
 def build_parser():
-    # We create a parent parser to pull off global config arguments before the subcommand
     parser = ReplArgumentParser(add_help=False)
-    
-    # Global arguments
-    parser.add_argument("--theme", choices=THEMES.keys(), help=argparse.SUPPRESS)
-    
     sub = parser.add_subparsers(dest="command")
 
     p = sub.add_parser("provision")
@@ -477,6 +481,10 @@ def build_parser():
     p.set_defaults(func=cmd_logs)
 
     sub.add_parser("demo").set_defaults(func=cmd_demo)
+
+    p = sub.add_parser("theme")
+    p.add_argument("color", choices=THEMES.keys())
+    p.set_defaults(func=cmd_theme)
 
     return parser
 
@@ -516,15 +524,6 @@ def interactive_mode():
             err(f"Parse error: {e}")
             continue
 
-        # Extract theme dynamically in REPL mode
-        if "--theme" in tokens:
-            idx = tokens.index("--theme")
-            if idx + 1 < len(tokens):
-                theme_arg = tokens[idx + 1]
-                if theme_arg in THEMES:
-                    apply_theme(theme_arg)
-                    print_banner()
-
         try:
             args = parser.parse_args(tokens)
         except ValueError as e:
@@ -558,11 +557,6 @@ def main():
 
     # Direct command mode
     parser = build_parser()
-
-    # Pre-parse just to extract --theme if present
-    pre_args, _ = parser.parse_known_args()
-    if getattr(pre_args, 'theme', None):
-        apply_theme(pre_args.theme)
 
     try:
         args = parser.parse_args()
